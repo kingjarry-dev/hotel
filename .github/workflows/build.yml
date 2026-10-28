@@ -1,0 +1,63 @@
+name: Construir instalador
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Descargar PHP y MariaDB
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $ua = 'Mozilla/5.0'
+          New-Item -ItemType Directory build | Out-Null
+
+          Invoke-WebRequest 'https://windows.php.net/downloads/releases/archives/php-8.3.12-nts-Win32-vs16-x64.zip' -OutFile build\php.zip -UserAgent $ua
+          Expand-Archive build\php.zip -DestinationPath build\php
+          $ini = Get-Content build\php\php.ini-development -Raw
+          $ini = $ini -replace ';\s*extension_dir = "ext"', 'extension_dir = "ext"'
+          $ini = $ini -replace ';\s*extension=pdo_mysql', 'extension=pdo_mysql'
+          $ini = $ini -replace ';\s*extension=mbstring', 'extension=mbstring'
+          Set-Content build\php\php.ini $ini
+
+          Invoke-WebRequest 'https://archive.mariadb.org/mariadb-10.11.9/winx64-packages/mariadb-10.11.9-winx64.zip' -OutFile build\maria.zip -UserAgent $ua
+          Expand-Archive build\maria.zip -DestinationPath build\maria-tmp
+          Move-Item (Get-ChildItem build\maria-tmp -Directory | Select-Object -First 1).FullName build\mariadb
+          foreach ($x in 'data', 'mysql-test', 'sql-bench', 'include', 'docs') {
+            Remove-Item "build\mariadb\$x" -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          Get-ChildItem build\mariadb -Recurse -Include *.pdb | Remove-Item -Force
+
+      - name: Verificar que PHP carga pdo_mysql
+        shell: pwsh
+        run: |
+          build\php\php.exe -m | Select-String 'pdo_mysql'
+          if ($LASTEXITCODE -ne 0) { throw 'pdo_mysql no esta activo' }
+
+      - name: Crear instalador
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc installer\hotel.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Fallo Inno Setup' }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hotel-Setup
+          path: installer/Output/Hotel-Setup.exe
+
+      - name: Publicar en Releases
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/Output/Hotel-Setup.exe
