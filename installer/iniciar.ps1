@@ -42,11 +42,11 @@ try {
     # Servidor web
     $env:HOTEL_DB_PORT = $dbPort
     if (-not (Puerto-Abierto $webPort)) {
-        Start-Process "$php\php.exe" -WindowStyle Hidden -ArgumentList '-S', "localhost:$webPort", '-t', "`"$app`""
+        Start-Process "$php\php.exe" -WindowStyle Hidden -ArgumentList '-S', "127.0.0.1:$webPort", '-t', "`"$app`""
         if (-not (Esperar-Puerto $webPort 20)) { throw 'El servidor web no arranco.' }
     }
 
-    Start-Process "http://localhost:$webPort"
+    Start-Process "http://127.0.0.1:$webPort"
 }
 catch {
     Add-Type -AssemblyName System.Windows.Forms
