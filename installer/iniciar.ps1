@@ -39,6 +39,13 @@ try {
         Pop-Location
     }
 
+    # Actualizar estructura de la base (seguro repetirlo)
+    Push-Location "$app\database"
+    & $mysql -u root -h 127.0.0.1 -P $dbPort hotel --default-character-set=utf8mb4 -e 'source actualizar.sql'
+    $rc = $LASTEXITCODE
+    Pop-Location
+    if ($rc -ne 0) { throw 'No se pudo actualizar la base de datos.' }
+
     # Servidor web
     $env:HOTEL_DB_PORT = $dbPort
     if (-not (Puerto-Abierto $webPort)) {
