@@ -27,3 +27,5 @@ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{ou
 .pg{display:flex;justify-content:space-between;color:var(--mut);font-size:14px}.panel form.inline{margin-top:10px}
 .key.clean{border-bottom-color:#e0a100;background:#fffbea}.key.clean em{color:#946c00}.key.mant{border-bottom-color:#7b8b93;background:#f1f4f5}.key.mant em{color:#55646b}
 .srch{display:flex;gap:10px;margin-bottom:14px}.srch input{max-width:340px}
+.bd{display:inline-block;font-size:12px;font-weight:600;padding:1px 9px;border-radius:99px;background:#dff3ea;color:#0b6b4b}.bd.low{background:#fff0c7;color:#7a5600}.bd.out{background:#fbe0dc;color:#9c2a21}
+td input.w2{width:64px;text-align:right}.alert{border-left:6px solid #e0a100}

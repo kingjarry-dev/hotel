@@ -2,7 +2,7 @@
 if(!$pdo->query('SELECT COUNT(*) FROM usuarios')->fetchColumn()){
   $i=$pdo->prepare('INSERT INTO usuarios(usuario,clave,rol) VALUES(?,?,?)');
   $i->execute(['admin',password_hash('admin123',PASSWORD_DEFAULT),'admin']);
-  $i->execute(['recepcion',password_hash('recepcion123',PASSWORD_DEFAULT),'recepcion']);
+  $i->execute(['recepcion',password_hash('recep123',PASSWORD_DEFAULT),'recepcion']);
 }
 $err='';
 if($_SERVER['REQUEST_METHOD']==='POST'){

@@ -17,10 +17,27 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
   }elseif($a==='estado'&&!$est){
     $ne=$_POST['estado']??'';if(in_array($ne,['libre','limpieza','mantenimiento']))$pdo->prepare("UPDATE habitaciones SET estado=? WHERE id=? AND estado<>'ocupada'")->execute([$ne,$h]);
   }elseif($est&&$a==='add'){
-    $p=$pdo->prepare('SELECT * FROM productos WHERE id=? AND activo=1');$p->execute([(int)$_POST['pid']]);$p=$p->fetch();
-    if($p)$pdo->prepare('INSERT INTO consumos(estadia_id,producto,precio,cantidad) VALUES(?,?,?,?)')->execute([$est['id'],$p['nombre'],$p['precio'],max(1,(int)$_POST['cant'])]);
+    $p=$pdo->prepare('SELECT * FROM productos WHERE id=? AND activo=1');$p->execute([(int)$_POST['pid']]);$p=$p->fetch();$q=max(1,(int)$_POST['cant']);
+    if($p){
+      $pdo->beginTransaction();
+      $u=$pdo->prepare('UPDATE productos SET stock=stock-? WHERE id=? AND stock>=?');$u->execute([$q,$p['id'],$q]);
+      if($u->rowCount()){
+        $pdo->prepare('INSERT INTO consumos(estadia_id,producto_id,producto,precio,cantidad) VALUES(?,?,?,?,?)')->execute([$est['id'],$p['id'],$p['nombre'],$p['precio'],$q]);
+        $pdo->prepare('INSERT INTO movimientos_stock(producto_id,cantidad,motivo,estadia_id,usuario) VALUES(?,?,?,?,?)')->execute([$p['id'],-$q,'venta',$est['id'],$_SESSION['u']['usuario']]);
+        $pdo->commit();
+      }else{$pdo->rollBack();$_SESSION['msg']='No hay suficiente stock de '.$p['nombre'].' (quedan '.(int)$p['stock'].').';}
+    }
   }elseif($est&&$a==='del'){
-    $pdo->prepare('DELETE FROM consumos WHERE id=? AND estadia_id=?')->execute([(int)$_POST['cid'],$est['id']]);
+    $cc=$pdo->prepare('SELECT * FROM consumos WHERE id=? AND estadia_id=?');$cc->execute([(int)$_POST['cid'],$est['id']]);$cc=$cc->fetch();
+    if($cc){
+      $pdo->beginTransaction();
+      $pdo->prepare('DELETE FROM consumos WHERE id=?')->execute([$cc['id']]);
+      if($cc['producto_id']){
+        $pdo->prepare('UPDATE productos SET stock=stock+? WHERE id=?')->execute([$cc['cantidad'],$cc['producto_id']]);
+        $pdo->prepare('INSERT INTO movimientos_stock(producto_id,cantidad,motivo,estadia_id,usuario) VALUES(?,?,?,?,?)')->execute([$cc['producto_id'],$cc['cantidad'],'devolucion',$est['id'],$_SESSION['u']['usuario']]);
+      }
+      $pdo->commit();
+    }
   }elseif($est&&$a==='pay'){
     $ad=round((float)($_POST['monto']??0),2);if($ad>0)$pay($est['id'],$ad,'adelanto');
   }elseif($est&&$a==='ext'){
@@ -44,7 +61,8 @@ $hoy=esAdmin()?$pdo->query("SELECT COALESCE(SUM(monto),0) FROM pagos WHERE DATE(
 $sel=null;foreach($rooms as $r)if($r['id']==($_GET['h']??0))$sel=$r;
 $prods=$pdo->query('SELECT * FROM productos WHERE activo=1 ORDER BY categoria,nombre')->fetchAll();
 $G=[];foreach($pdo->query("SELECT dni,MAX(huesped) h,MAX(telefono) t FROM estadias WHERE dni IS NOT NULL AND dni<>'' GROUP BY dni") as $g)$G[$g['dni']]=['h'=>$g['h'],'t'=>$g['t']];
-include 'includes/header.php';?>
+include 'includes/header.php';
+if(!empty($_SESSION['msg'])){echo '<div class="err">'.e($_SESSION['msg']).'</div>';unset($_SESSION['msg']);}?>
 <div class="stats"><div><b><?=$libres?></b>Disponibles</div><div><b><?=count($rooms)-$libres-$fuera?></b>Ocupadas</div><div><b><?=$fuera?></b>Limpieza / mantenim.</div><div><b><?=$alertas?></b>Salen hoy o vencidas</div><div><b><?=money($pend)?></b>Por cobrar</div>
 <?php if($hoy!==null):?><div class="hi"><b><?=money($hoy)?></b>Cobrado hoy</div><?php endif;?></div>
 <div class="split"><div class="keys">
@@ -65,7 +83,7 @@ $total=$sel['noches']*$sel['pn']+$sel['cons'];$saldo=$total-$sel['pag'];$late=$s
 <p class="mut"><?=$sel['dni']?'DNI: '.e($sel['dni']).' · ':''?><?=$sel['telefono']?'Tel: '.e($sel['telefono']).' · ':''?><a href="modulos/boleta.php?id=<?=$sel['eid']?>" target="_blank">Ver cuenta imprimible</a></p>
 <?php if($late):?><div class="err">Debía salir el <?=fd($sel['salida_prevista'])?> (<?=dias($sel['salida_prevista'],$hoyd)?> día(s) de más). Extiende la estadía para cobrar esos días, o haz el check-out.</div><?php endif;?>
 <table><?php foreach($cs as $c):?><tr><td><?=$c['cantidad']?> × <?=e($c['producto'])?></td><td class="n"><?=money($c['precio']*$c['cantidad'])?></td><td class="n"><form method="post"><input type="hidden" name="a" value="del"><input type="hidden" name="h" value="<?=$sel['id']?>"><input type="hidden" name="cid" value="<?=$c['id']?>"><button class="lnk">Quitar</button></form></td></tr><?php endforeach;?></table>
-<form method="post" class="inline"><input type="hidden" name="a" value="add"><input type="hidden" name="h" value="<?=$sel['id']?>"><label>Producto<select name="pid"><?php foreach($prods as $p):?><option value="<?=$p['id']?>"><?=e($p['nombre'])?> (<?=money($p['precio'])?>)</option><?php endforeach;?></select></label><label class="sm">Cant.<input name="cant" type="number" min="1" value="1"></label><button class="btn alt">Cargar</button></form>
+<form method="post" class="inline"><input type="hidden" name="a" value="add"><input type="hidden" name="h" value="<?=$sel['id']?>"><label>Producto<select name="pid"><?php foreach($prods as $p):?><option value="<?=$p['id']?>"<?=$p['stock']<=0?' disabled':''?>><?=e($p['nombre'])?> (<?=money($p['precio'])?>) · <?=$p['stock']<=0?'agotado':'quedan '.(int)$p['stock']?></option><?php endforeach;?></select></label><label class="sm">Cant.<input name="cant" type="number" min="1" value="1"></label><button class="btn alt">Cargar</button></form>
 <div class="tot"><span>Total de la cuenta</span><b><?=money($total)?></b></div>
 <?php foreach($pgs as $p):?><div class="pg"><span>Pagado (<?=e($p['metodo'])?>)</span><span>− <?=money($p['monto'])?></span></div><?php endforeach;?>
 <div class="tot"><span><?=$saldo<0?'A devolver':'Saldo a cobrar'?></span><b><?=money(abs($saldo))?></b></div>
